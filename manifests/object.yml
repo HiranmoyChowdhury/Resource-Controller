@@ -1,0 +1,17 @@
+apiVersion: rcs.mycrd/v1alpha1
+kind: RanChy
+metadata:
+  name: book-bazar
+  namespace: default
+spec:
+  deletionPolicy: Delete
+  deploymentSpec:
+    deploymentName: depu
+    replicas: 1
+    deploymentImage: hiranmoy36/book-bazar
+  serviceSpec:
+    serviceName: service-name
+    serviceType: NodePort
+    servicePort: 34400
+  labels:
+    label: laula

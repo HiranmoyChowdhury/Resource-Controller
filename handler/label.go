@@ -1,7 +1,9 @@
 package handler
 
+import "fmt"
+
 var (
-	counter   int32  = 0
+	counter   int32  = 2
 	ownerName string = "RanChy36"
 )
 
@@ -10,5 +12,9 @@ func NextLabel() string {
 	return CurrentLabel()
 }
 func CurrentLabel() string {
-	return ownerName + string(counter)
+	ret := ownerName
+	fmt.Println(ret)
+	ret += "skdjk"
+	fmt.Println(ret)
+	return ret
 }

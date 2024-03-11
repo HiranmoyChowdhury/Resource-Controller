@@ -32,6 +32,11 @@ func (in *DeploymentSpec) DeepCopyInto(out *DeploymentSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.PodCommands != nil {
+		in, out := &in.PodCommands, &out.PodCommands
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
@@ -157,6 +162,16 @@ func (in *ServiceSpec) DeepCopyInto(out *ServiceSpec) {
 	*out = *in
 	if in.ServicePort != nil {
 		in, out := &in.ServicePort, &out.ServicePort
+		*out = new(int32)
+		**out = **in
+	}
+	if in.TargetPort != nil {
+		in, out := &in.TargetPort, &out.TargetPort
+		*out = new(int32)
+		**out = **in
+	}
+	if in.NodePort != nil {
+		in, out := &in.NodePort, &out.NodePort
 		*out = new(int32)
 		**out = **in
 	}

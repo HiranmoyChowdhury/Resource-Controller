@@ -1,16 +1,15 @@
 apiVersion: rcs.mycrd/v1alpha1
 kind: RanChy
 metadata:
-  name: book-bazar
+  name: book-bazar-01
   namespace: default
 spec:
-  deletionPolicy: WipeOut
-  deploymentSpec:
-    replicas: 2
-    deploymentImage: nginx:latest
-  serviceSpec:
-    serviceName: service-name
-    serviceType: NodePort
-    servicePort: 30001
   labels:
-    label: laula
+    owner: Hiranmoy
+  deploymentSpec:
+    name: hello
+    replicas: 2
+    image: hiranmoy36/book-bazar
+    command: ["/root/binary","start"]
+  serviceSpec:
+    port: 8080

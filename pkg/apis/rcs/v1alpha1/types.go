@@ -37,11 +37,12 @@ type DeletionPolicy string
 
 type DeploymentSpec struct {
 	// +optional
-	DeploymentName string `json:"deploymentName"`
+	DeploymentName string `json:"name"`
 	// +optional
-	Replicas *int32 `json:"replicas"`
+	Replicas        *int32 `json:"replicas"`
+	DeploymentImage string `json:"image"`
 	// +optional
-	DeploymentImage string `json:"deploymentImage"`
+	PodCommands []string `json:"command"`
 }
 
 const (
@@ -55,11 +56,15 @@ const (
 type ServiceType string
 type ServiceSpec struct {
 	// +optional
-	ServiceName string `json:"serviceName"`
+	ServiceName string `json:"name"`
 	// +optional
 	ServiceType `json:"serviceType"`
 	// +optional
-	ServicePort *int32 `json:"servicePort"`
+	ServicePort *int32 `json:"port"`
+	// +optional
+	TargetPort *int32 `json:"targetPort"`
+	// +optional
+	NodePort *int32 `json:"NodePort"`
 }
 
 type RanChyStatus struct {

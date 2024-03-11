@@ -235,9 +235,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
+	fmt.Println("deploy created successfully!")
+
 	service, err := c.serviceLister.Services(ranchySt.Namespace).Get(serviceName)
 
 	if errors.IsNotFound(err) {
+		fmt.Println("service is on the way")
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt), metav1.CreateOptions{})
 		c.updateForService(ranchySt, service)
 	}
@@ -245,11 +248,13 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "Delete") && !metav1.IsControlledBy(deployment, ranchySt) {
+	fmt.Println("deployment and service created successfully!")
+
+	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
 		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
-	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "Delete") && !metav1.IsControlledBy(service, ranchySt) {
+	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, service.Name)
 		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
@@ -326,6 +331,8 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 			"owner": handler.NextLabel(),
 		}
 		ranchySt.Spec.Labels = labels
+	} else {
+		labels = ranchySt.Spec.Labels
 	}
 	deploymentName := ranchySt.Spec.DeploymentName
 	deploymentReplicaCount := *ranchySt.Spec.Replicas
@@ -345,13 +352,19 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 	} else {
 		objectMeta.Name = deploymentName
 	}
-	if ranchySt.Spec.DeletionPolicy == "Delete" || ranchySt.Spec.DeletionPolicy == "" {
+	if ranchySt.Spec.DeletionPolicy == "WipeOut" || ranchySt.Spec.DeletionPolicy == "" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
 			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 
 	objectMeta.Labels = labels
+
+	containerPorts := []corev1.ContainerPort{}
+
+	if ranchySt.Spec.TargetPort != nil {
+		containerPorts[0].ContainerPort = *ranchySt.Spec.TargetPort
+	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: objectMeta,
@@ -367,8 +380,10 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  utils.ContainerName,
-							Image: deploymentImage,
+							Name:    utils.ContainerName,
+							Image:   deploymentImage,
+							Command: ranchySt.Spec.PodCommands,
+							Ports:   containerPorts,
 						},
 					},
 				},
@@ -384,6 +399,8 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 			"owner": handler.NextLabel(),
 		}
 		ranchySt.Spec.Labels = labels
+	} else {
+		labels = ranchySt.Spec.Labels
 	}
 	serviceName := ranchySt.Spec.ServiceName
 	serviceType := ranchySt.Spec.ServiceType
@@ -393,35 +410,47 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 		serviceType = utils.DefaultServiceType
 	}
 	if servicePort == nil {
-		*servicePort = utils.DefaultServicePort
+		servicePort = handler.GetPort()
+
 	}
+	fmt.Println("                 before")
 	if serviceType == "Headless" {
 		serviceType = ""
 	}
+
 	perfectServiceType := corev1.ServiceType(serviceType)
 
 	objectMeta := metav1.ObjectMeta{}
 	if serviceName == "" {
 		objectMeta.GenerateName = handler.ToLowerCase(ranchySt.Name)
 	} else {
+		serviceName = serviceName
 		objectMeta.Name = serviceName
 	}
-	if ranchySt.Spec.DeletionPolicy == "Delete" || ranchySt.Spec.DeletionPolicy == "" {
+	if ranchySt.Spec.DeletionPolicy == "WipeOut" || ranchySt.Spec.DeletionPolicy == "" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
 			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
+	}
+	objectMeta.Labels = labels
+
+	ports := []corev1.ServicePort{
+		{
+			Port: *servicePort,
+			//Protocol: "TCP",
+		},
+	}
+	if ranchySt.Spec.NodePort != nil {
+		ports[0].NodePort = *ranchySt.Spec.NodePort
+	}
+	if ranchySt.Spec.TargetPort != nil {
+		ports[0].TargetPort.IntVal = *ranchySt.Spec.TargetPort
 	}
 
 	return &corev1.Service{
 		ObjectMeta: objectMeta,
 		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{
-					Port:     *servicePort,
-					NodePort: *servicePort,
-					Protocol: "TCP",
-				},
-			},
+			Ports:    ports,
 			Selector: labels,
 			Type:     perfectServiceType,
 		},
@@ -429,18 +458,10 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 }
 
 func (c *Controller) updateForDeployment(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) {
-	if ranchySt.Spec.DeploymentName != "" {
-		return
-	}
 	deploymentName := deployment.Name
 	ranchySt.Spec.DeploymentName = deploymentName
-	c.enqueueRanchy(ranchySt)
 }
 func (c *Controller) updateForService(ranchySt *rcsv1alpha1.RanChy, service *corev1.Service) {
-	if ranchySt.Spec.ServiceName != "" {
-		return
-	}
 	serviceName := service.Name
 	ranchySt.Spec.ServiceName = serviceName
-	c.enqueueRanchy(ranchySt)
 }

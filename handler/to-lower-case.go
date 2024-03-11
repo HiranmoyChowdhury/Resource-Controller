@@ -1,7 +1,7 @@
 package handler
 
 func ToLowerCase(s string) string {
-	var result string = "x"
+	var result string = ""
 	for _, char := range s {
 		if char >= 'A' && char <= 'Z' {
 			result += string(char + 32)
@@ -11,5 +11,5 @@ func ToLowerCase(s string) string {
 			result += string(char)
 		}
 	}
-	return result
+	return result + "-"
 }

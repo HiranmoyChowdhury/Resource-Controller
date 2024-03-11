@@ -1,8 +1,7 @@
-package handler
+package controller
 
 import (
 	"flag"
-	"github.com/HiranmoyChowdhury/ResourceController/controller"
 	"github.com/HiranmoyChowdhury/ResourceController/pkg/generated/clientset/versioned"
 	"github.com/HiranmoyChowdhury/ResourceController/pkg/generated/informers/externalversions"
 	"path/filepath"
@@ -60,7 +59,7 @@ func Start() {
 	}
 	rcsInformerFactory = informers.NewSharedInformerFactory(rcsClient, time.Second*30)
 
-	controller := controller.NewController(ctx, kubeClient, rcsClient,
+	controller := NewController(ctx, kubeClient, rcsClient,
 		kubeInformerFactory.Apps().V1().Deployments(),
 		kubeInformerFactory.Core().V1().Services(),
 		rcsInformerFactory.Rcs().V1alpha1().RanChies())

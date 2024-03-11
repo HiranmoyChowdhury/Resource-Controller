@@ -4,14 +4,13 @@ metadata:
   name: book-bazar
   namespace: default
 spec:
-  deletionPolicy: Delete
+  deletionPolicy: WipeOut
   deploymentSpec:
-    deploymentName: depu
-    replicas: 1
-    deploymentImage: hiranmoy36/book-bazar
+    replicas: 2
+    deploymentImage: nginx:latest
   serviceSpec:
     serviceName: service-name
     serviceType: NodePort
-    servicePort: 34400
+    servicePort: 30001
   labels:
     label: laula

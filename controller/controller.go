@@ -1,8 +1,9 @@
-package handler
+package controller
 
 import (
 	"context"
 	"fmt"
+	"github.com/HiranmoyChowdhury/ResourceController/handler"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -58,7 +59,6 @@ type Controller struct {
 	recorder record.EventRecorder
 }
 
-// NewController returns a new sample controller
 func NewController(
 	ctx context.Context,
 	kubeclientset kubernetes.Interface,
@@ -67,6 +67,7 @@ func NewController(
 	serviceInformer coreinformer.ServiceInformer,
 	ranchyInformer informers.RanChyInformer) *Controller {
 	logger := klog.FromContext(ctx)
+	//fmt.Println("this is fine")
 
 	utilruntime.Must(rcsscheme.AddToScheme(scheme.Scheme))
 	logger.V(4).Info("Creating event broadcaster")
@@ -136,19 +137,13 @@ func NewController(
 	return controller
 }
 
-// Run will set up the event handlers for types we are interested in, as well
-// as syncing informer caches and starting workers. It will block until stopCh
-// is closed, at which point it will shutdown the workqueue and wait for
-// workers to finish processing their current work items.
 func (c *Controller) Run(ctx context.Context, workers int) error {
 	defer utilruntime.HandleCrash()
 	defer c.workqueue.ShutDown()
 	logger := klog.FromContext(ctx)
 
-	// Start the informer factories to begin populating the informer caches
 	logger.Info("Starting Ranchy controller")
 
-	// Wait for the caches to be synced before starting workers
 	logger.Info("Waiting for informer caches to sync")
 
 	if ok := cache.WaitForCacheSync(ctx.Done(), c.deploymentSynced, c.serviceSynced, c.ranchySynced); !ok {
@@ -156,7 +151,6 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 	}
 
 	logger.Info("Starting workers", "count", workers)
-	// Launch two workers to process Foo resources
 	for i := 0; i < workers; i++ {
 		go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 	}
@@ -168,16 +162,11 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 	return nil
 }
 
-// runWorker is a long-running function that will continually call the
-// processNextWorkItem function in order to read and process a message on the
-// workqueue.
 func (c *Controller) runWorker(ctx context.Context) {
 	for c.processNextWorkItem(ctx) {
 	}
 }
 
-// processNextWorkItem will read a single work item off the workqueue and
-// attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	obj, shutdown := c.workqueue.Get()
 	logger := klog.FromContext(ctx)
@@ -186,39 +175,19 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 		return false
 	}
 
-	// We wrap this block in a func, so we can defer c.workqueue.Done.
 	err := func(obj interface{}) error {
-		// We call Done here so the workqueue knows we have finished
-		// processing this item. We also must remember to call Forget if we
-		// do not want this work item being re-queued. For example, we do
-		// not call Forget if a transient error occurs, instead the item is
-		// put back on the workqueue and attempted again after a back-off
-		// period.
 		defer c.workqueue.Done(obj)
 		var key string
 		var ok bool
-		// We expect strings to come off the workqueue. These are of the
-		// form namespace/name. We do this as the delayed nature of the
-		// workqueue means the items in the informer cache may actually be
-		// more up to date that when the item was initially put onto the
-		// workqueue.
 		if key, ok = obj.(string); !ok {
-			// As the item in the workqueue is actually invalid, we call
-			// Forget here else we'd go into a loop of attempting to
-			// process a work item that is invalid.
 			c.workqueue.Forget(obj)
 			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
 		}
-		// Run the syncHandler, passing it the namespace/name string of the
-		// RanChy resource to be synced.
 		if err := c.syncHandler(ctx, key); err != nil {
-			// Put the item back on the workqueue to handle any transient errors.
 			c.workqueue.AddRateLimited(key)
-			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
+			return fmt.Errorf("we need to solve this problem '%s': %s, requeuing", key, err.Error())
 		}
-		// Finally, if no error occurs we Forget this item so it does not
-		// get queued again until another change happens.
 		c.workqueue.Forget(obj)
 		logger.Info("Successfully synced", "resourceName", key)
 		return nil
@@ -228,16 +197,15 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 		utilruntime.HandleError(err)
 		return true
 	}
+	fmt.Println("that's fine")
 
 	return true
 }
 
-// syncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the Foo resource
-// with the current status of the resource.
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
-	// Convert the namespace/name string into a distinct namespace and name
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "resourceName", key)
+
+	fmt.Println("syncHandler started")
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -245,11 +213,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return nil
 	}
 
-	// Get the Foo resource with this namespace/name
 	ranchySt, err := c.ranchyLister.RanChies(namespace).Get(name)
 	if err != nil {
-		// The Foo resource may no longer exist, in which case we stop
-		// processing.
 		if errors.IsNotFound(err) {
 			utilruntime.HandleError(fmt.Errorf("ranchy '%s' in work queue no longer exists", key))
 			return nil
@@ -260,21 +225,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	deploymentName := ranchySt.Spec.DeploymentName
 	serviceName := ranchySt.Spec.ServiceName
-	if deploymentName == "" {
-		// We choose to absorb the error here as the worker would requeue the
-		// resource otherwise. Instead, the next time the resource is updated
-		// the resource will be queued again.
-		utilruntime.HandleError(fmt.Errorf("%s: deployment name must be specified", key))
-		return nil
-	}
-	if serviceName == "" {
-		utilruntime.HandleError(fmt.Errorf("%s: service name must be specified", key))
-		return nil
-	}
 
-	// Get the deployment with the name specified in Foo.spec
 	deployment, err := c.deploymentLister.Deployments(ranchySt.Namespace).Get(deploymentName)
-	// If the resource doesn't exist, we'll create it
 	if errors.IsNotFound(err) {
 		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Create(context.TODO(), newDeployment(ranchySt), metav1.CreateOptions{})
 		c.updateForDeployment(ranchySt, deployment)
@@ -285,33 +237,23 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	service, err := c.serviceLister.Services(ranchySt.Namespace).Get(serviceName)
 
-	// If the resource doesn't exist, we'll create it
 	if errors.IsNotFound(err) {
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt), metav1.CreateOptions{})
+		c.updateForService(ranchySt, service)
 	}
-	// If an error occurs during Get/Create, we'll requeue the item so we can
-	// attempt processing again later. This could have been caused by a
-	// temporary network failure, or any other transient reason.
 	if err != nil {
 		return err
 	}
 
-	// If the Deployment is not controlled by this Foo resource, we should log
-	// a warning to the event recorder and return error msg.
-	if !metav1.IsControlledBy(deployment, ranchySt) {
+	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "Delete") && !metav1.IsControlledBy(deployment, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
 		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
-		return fmt.Errorf("%s", msg)
 	}
-	if !metav1.IsControlledBy(service, ranchySt) {
+	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "Delete") && !metav1.IsControlledBy(service, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, service.Name)
 		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
-		return fmt.Errorf("%s", msg)
 	}
 
-	// If this number of the replicas on the Foo resource is specified, and the
-	// number does not equal the current desired replicas on the Deployment, we
-	// should update the Deployment resource.
 	if (ranchySt.Spec.Replicas != nil && *ranchySt.Spec.Replicas != *deployment.Spec.Replicas) ||
 		(ranchySt.Spec.DeploymentName != "" && ranchySt.Spec.DeploymentName != deployment.Name) ||
 		(ranchySt.Spec.DeploymentImage != "" && ranchySt.Spec.DeploymentImage != deployment.Spec.Template.Spec.Containers[0].Image) {
@@ -320,20 +262,13 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		c.updateForDeployment(ranchySt, deployment)
 	}
 
-	if err != nil {
-		return err
-	}
-
 	if (ranchySt.Spec.ServiceName != "" && ranchySt.Spec.ServiceName != service.Name) ||
 		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].Port) ||
 		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].NodePort) ||
 		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].TargetPort.IntVal) {
 		logger.V(4).Info("Update service resource")
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt), metav1.UpdateOptions{})
-
-	}
-	if err != nil {
-		return err
+		c.updateForService(ranchySt, service)
 	}
 
 	err = c.updateRanchyStatus(ranchySt, deployment, service)
@@ -349,13 +284,10 @@ func (c *Controller) updateRanchyStatus(ranchySt *rcsv1alpha1.RanChy, deployment
 	ranchyCopy := ranchySt.DeepCopy()
 	ranchyCopy.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
 
-	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchyCopy, metav1.UpdateOptions{})
+	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), ranchyCopy, metav1.UpdateOptions{})
 	return err
 }
 
-// enqueueFoo takes a Ranchy resource and converts it into a namespace/name
-// string which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than Ranchy.
 func (c *Controller) enqueueRanchy(obj interface{}) {
 	var key string
 	var err error
@@ -366,11 +298,6 @@ func (c *Controller) enqueueRanchy(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-// handleObject will take any resource implementing metav1.Object and attempt
-// to find the Ranchy resource that 'owns' it. It does this by looking at the
-// objects metadata.ownerReferences field for an appropriate OwnerReference.
-// It then enqueues that Foo resource to be processed. If the object does not
-// have an appropriate OwnerReference, it will simply be skipped.
 func (c *Controller) handleObject(obj interface{}) {
 	var object metav1.Object
 	var ok bool
@@ -389,26 +316,17 @@ func (c *Controller) handleObject(obj interface{}) {
 		logger.V(4).Info("Recovered deleted object", "resourceName", object.GetName())
 	}
 	logger.V(4).Info("Processing object", "object", klog.KObj(object))
-	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
-		// If this object is not owned by a Ranchy, we should not do anything more
-		// with it.
-		if ownerRef.Kind != "RanChy" {
-			return
-		}
 
-		ranchy, err := c.ranchyLister.RanChies(object.GetNamespace()).Get(ownerRef.Name)
-		if err != nil {
-			logger.V(4).Info("Ignore orphaned object", "object", klog.KObj(object), "foo", ownerRef.Name)
-			return
-		}
-
-		c.enqueueRanchy(ranchy)
-		return
-	}
 }
 
 func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 	labels := ranchySt.Spec.Labels
+	if len(labels) == 0 {
+		labels = map[string]string{
+			"owner": handler.NextLabel(),
+		}
+		ranchySt.Spec.Labels = labels
+	}
 	deploymentName := ranchySt.Spec.DeploymentName
 	deploymentReplicaCount := *ranchySt.Spec.Replicas
 	deploymentImage := ranchySt.Spec.DeploymentImage
@@ -421,13 +339,22 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 		deploymentReplicaCount = utils.DefaultReplicaCount
 	}
 
+	objectMeta := metav1.ObjectMeta{}
+	if deploymentName == "" {
+		objectMeta.GenerateName = handler.ToLowerCase(ranchySt.Name)
+	} else {
+		objectMeta.Name = deploymentName
+	}
+	if ranchySt.Spec.DeletionPolicy == "Delete" || ranchySt.Spec.DeletionPolicy == "" {
+		objectMeta.OwnerReferences = []metav1.OwnerReference{
+			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+		}
+	}
+
+	objectMeta.Labels = labels
+
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: deploymentName,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
-			},
-		},
+		ObjectMeta: objectMeta,
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &deploymentReplicaCount,
 			Selector: &metav1.LabelSelector{
@@ -452,6 +379,12 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 
 func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 	labels := ranchySt.Spec.Labels
+	if len(labels) == 0 {
+		labels = map[string]string{
+			"owner": handler.NextLabel(),
+		}
+		ranchySt.Spec.Labels = labels
+	}
 	serviceName := ranchySt.Spec.ServiceName
 	serviceType := ranchySt.Spec.ServiceType
 	servicePort := ranchySt.Spec.ServicePort
@@ -467,14 +400,20 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 	}
 	perfectServiceType := corev1.ServiceType(serviceType)
 
+	objectMeta := metav1.ObjectMeta{}
+	if serviceName == "" {
+		objectMeta.GenerateName = handler.ToLowerCase(ranchySt.Name)
+	} else {
+		objectMeta.Name = serviceName
+	}
+	if ranchySt.Spec.DeletionPolicy == "Delete" || ranchySt.Spec.DeletionPolicy == "" {
+		objectMeta.OwnerReferences = []metav1.OwnerReference{
+			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+		}
+	}
+
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: serviceName,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
-			},
-			Labels: labels,
-		},
+		ObjectMeta: objectMeta,
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
@@ -490,16 +429,18 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 }
 
 func (c *Controller) updateForDeployment(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) {
-	deploymentName := deployment.GenerateName
+	if ranchySt.Spec.DeploymentName != "" {
+		return
+	}
+	deploymentName := deployment.Name
 	ranchySt.Spec.DeploymentName = deploymentName
-	deployment.Name = deploymentName
-	deployment, _ = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
 	c.enqueueRanchy(ranchySt)
 }
 func (c *Controller) updateForService(ranchySt *rcsv1alpha1.RanChy, service *corev1.Service) {
-	serviceName := service.GenerateName
+	if ranchySt.Spec.ServiceName != "" {
+		return
+	}
+	serviceName := service.Name
 	ranchySt.Spec.ServiceName = serviceName
-	service.Name = serviceName
-	service, _ = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), service, metav1.UpdateOptions{})
 	c.enqueueRanchy(ranchySt)
 }

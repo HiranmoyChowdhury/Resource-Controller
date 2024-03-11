@@ -10,14 +10,22 @@ import (
 type RanChy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              RanChySpec   `json:"spec"`
-	Status            RanChyStatus `json:"status"`
+	Spec              RanChySpec `json:"spec"`
+
+	// +optional
+	Status RanChyStatus `json:"status"`
 }
+
+// +kubebuilder:validation:Optional
 type RanChySpec struct {
+	// +optional
 	DeletionPolicy `json:"deletionPolicy"`
+	// +optional
 	DeploymentSpec `json:"deploymentSpec"`
-	ServiceSpec    `json:"serviceSpec"`
-	Labels         map[string]string `json:"labels"`
+	// +optional
+	ServiceSpec `json:"serviceSpec"`
+	// +optional
+	Labels map[string]string `json:"labels"`
 }
 
 const (
@@ -28,8 +36,11 @@ const (
 type DeletionPolicy string
 
 type DeploymentSpec struct {
-	DeploymentName  string `json:"deploymentName"`
-	Replicas        *int32 `json:"replicas"`
+	// +optional
+	DeploymentName string `json:"deploymentName"`
+	// +optional
+	Replicas *int32 `json:"replicas"`
+	// +optional
 	DeploymentImage string `json:"deploymentImage"`
 }
 
@@ -43,8 +54,11 @@ const (
 
 type ServiceType string
 type ServiceSpec struct {
+	// +optional
 	ServiceName string `json:"serviceName"`
+	// +optional
 	ServiceType `json:"serviceType"`
+	// +optional
 	ServicePort *int32 `json:"servicePort"`
 }
 

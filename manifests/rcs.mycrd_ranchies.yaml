@@ -48,10 +48,6 @@ spec:
                   replicas:
                     format: int32
                     type: integer
-                required:
-                - deploymentImage
-                - deploymentName
-                - replicas
                 type: object
               labels:
                 additionalProperties:
@@ -66,16 +62,7 @@ spec:
                     type: integer
                   serviceType:
                     type: string
-                required:
-                - serviceName
-                - servicePort
-                - serviceType
                 type: object
-            required:
-            - deletionPolicy
-            - deploymentSpec
-            - labels
-            - serviceSpec
             type: object
           status:
             properties:
@@ -87,7 +74,6 @@ spec:
             type: object
         required:
         - spec
-        - status
         type: object
     served: true
     storage: true

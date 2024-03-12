@@ -8,6 +8,7 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:printcolumn:name="Deletion Policy",type=string,JSONPath=`.spec.deletionPolicy`
+// +kubebuilder:subresource:status
 
 type RanChy struct {
 	metav1.TypeMeta   `json:",inline"`

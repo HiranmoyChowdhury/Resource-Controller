@@ -281,7 +281,7 @@ func (c *Controller) updateRanchyStatus(ranchySt *rcsv1alpha1.RanChy, deployment
 	ranchyCopy := ranchySt.DeepCopy()
 	ranchyCopy.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
 
-	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), ranchyCopy, metav1.UpdateOptions{})
+	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchyCopy, metav1.UpdateOptions{})
 	return err
 }
 

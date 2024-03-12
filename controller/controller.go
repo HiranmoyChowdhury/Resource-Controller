@@ -67,7 +67,6 @@ func NewController(
 	serviceInformer coreinformer.ServiceInformer,
 	ranchyInformer informers.RanChyInformer) *Controller {
 	logger := klog.FromContext(ctx)
-	//fmt.Println("this is fine")
 
 	utilruntime.Must(rcsscheme.AddToScheme(scheme.Scheme))
 	logger.V(4).Info("Creating event broadcaster")
@@ -197,7 +196,6 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 		utilruntime.HandleError(err)
 		return true
 	}
-	fmt.Println("that's fine")
 
 	return true
 }
@@ -235,20 +233,15 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	fmt.Println("deploy created successfully!")
-
 	service, err := c.serviceLister.Services(ranchySt.Namespace).Get(serviceName)
 
 	if errors.IsNotFound(err) {
-		fmt.Println("service is on the way")
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt), metav1.CreateOptions{})
 		c.updateForService(ranchySt, service)
 	}
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("deployment and service created successfully!")
 
 	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
@@ -413,7 +406,6 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 		servicePort = handler.GetPort()
 
 	}
-	fmt.Println("                 before")
 	if serviceType == "Headless" {
 		serviceType = ""
 	}
@@ -456,7 +448,6 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 		},
 	}
 }
-
 func (c *Controller) updateForDeployment(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) {
 	deploymentName := deployment.Name
 	ranchySt.Spec.DeploymentName = deploymentName

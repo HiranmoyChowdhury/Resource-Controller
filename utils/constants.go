@@ -1,7 +1,7 @@
 package utils
 
 const (
-	DefaultReplicaCount = 3
+	DefaultReplicaCount = 1
 	ContainerName       = "omnitrix"
 	DefaultImage        = "hiranmoy36/book-bazar"
 	DefaultServiceType  = "NodePort"

@@ -1,11 +1,13 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:printcolumn:name="Deletion Policy",type=string,JSONPath=`.spec.deletionPolicy`
 
 type RanChy struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -19,13 +21,13 @@ type RanChy struct {
 // +kubebuilder:validation:Optional
 type RanChySpec struct {
 	// +optional
-	DeletionPolicy `json:"deletionPolicy"`
+	DeletionPolicy DeletionPolicy `json:"deletionPolicy,omitempty"`
 	// +optional
-	DeploymentSpec `json:"deploymentSpec"`
+	DeploymentSpec DeploymentSpec `json:"deploymentSpec,omitempty"`
 	// +optional
-	ServiceSpec `json:"serviceSpec"`
+	ServiceSpec ServiceSpec `json:"serviceSpec,omitempty"`
 	// +optional
-	Labels map[string]string `json:"labels"`
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 const (
@@ -37,34 +39,24 @@ type DeletionPolicy string
 
 type DeploymentSpec struct {
 	// +optional
-	DeploymentName string `json:"name"`
+	Name string `json:"name,omitempty"`
 	// +optional
-	Replicas        *int32 `json:"replicas"`
-	DeploymentImage string `json:"image"`
+	Replicas *int32 `json:"replicas,omitempty"`
+	Image    string `json:"image"`
 	// +optional
-	PodCommands []string `json:"command"`
+	Commands []string `json:"commands,omitempty"`
 }
-
-const (
-	ServiceTypeClusterIP    ServiceType = "ClusterIP"
-	ServiceTypeNodePort     ServiceType = "NodePort"
-	ServiceTypeLoadBalancer ServiceType = "LoadBalancer"
-	ServiceTypeHeadless     ServiceType = "Headless"
-	ServiceTypeHeadless_    ServiceType = ""
-)
-
-type ServiceType string
 type ServiceSpec struct {
 	// +optional
-	ServiceName string `json:"name"`
+	Name string `json:"name,omitempty"`
 	// +optional
-	ServiceType `json:"serviceType"`
+	ServiceType corev1.ServiceType `json:"serviceType,omitempty"`
 	// +optional
-	ServicePort *int32 `json:"port"`
+	Port *int32 `json:"port,omitempty"`
 	// +optional
-	TargetPort *int32 `json:"targetPort"`
+	TargetPort *int32 `json:"targetPort,omitempty"`
 	// +optional
-	NodePort *int32 `json:"NodePort"`
+	NodePort *int32 `json:"NodePort,omitempty"`
 }
 
 type RanChyStatus struct {

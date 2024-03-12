@@ -2,14 +2,12 @@ apiVersion: rcs.mycrd/v1alpha1
 kind: RanChy
 metadata:
   name: book-bazar-01
-  namespace: default
 spec:
   labels:
     owner: Hiranmoy
+  deletionPolicy: WipeOut
   deploymentSpec:
-    name: hello
-    replicas: 2
     image: hiranmoy36/book-bazar
-    command: ["/root/binary","start"]
+    commands: ["/root/binary","start"]
   serviceSpec:
     port: 8080

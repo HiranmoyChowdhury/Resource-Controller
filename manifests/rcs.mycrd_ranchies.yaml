@@ -14,7 +14,11 @@ spec:
     singular: ranchy
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.deletionPolicy
+      name: Deletion Policy
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         properties:
@@ -41,7 +45,7 @@ spec:
                 type: string
               deploymentSpec:
                 properties:
-                  command:
+                  commands:
                     items:
                       type: string
                     type: array
@@ -70,6 +74,8 @@ spec:
                     format: int32
                     type: integer
                   serviceType:
+                    description: Service Type string describes ingress methods for
+                      a service
                     type: string
                   targetPort:
                     format: int32
@@ -89,3 +95,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}

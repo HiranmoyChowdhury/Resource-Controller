@@ -221,8 +221,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	deploymentName := ranchySt.Spec.DeploymentName
-	serviceName := ranchySt.Spec.ServiceName
+	deploymentName := ranchySt.Spec.DeploymentSpec.Name
+	serviceName := ranchySt.Spec.ServiceSpec.Name
 
 	deployment, err := c.deploymentLister.Deployments(ranchySt.Namespace).Get(deploymentName)
 	if errors.IsNotFound(err) {
@@ -251,19 +251,18 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		msg := fmt.Sprintf(MessageResourceExists, service.Name)
 		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
-
-	if (ranchySt.Spec.Replicas != nil && *ranchySt.Spec.Replicas != *deployment.Spec.Replicas) ||
-		(ranchySt.Spec.DeploymentName != "" && ranchySt.Spec.DeploymentName != deployment.Name) ||
-		(ranchySt.Spec.DeploymentImage != "" && ranchySt.Spec.DeploymentImage != deployment.Spec.Template.Spec.Containers[0].Image) {
+	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
+		(ranchySt.Spec.DeploymentSpec.Name != "" && ranchySt.Spec.DeploymentSpec.Name != deployment.Name) ||
+		(ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) {
 		logger.V(4).Info("Update deployment resource")
 		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), newDeployment(ranchySt), metav1.UpdateOptions{})
 		c.updateForDeployment(ranchySt, deployment)
 	}
 
-	if (ranchySt.Spec.ServiceName != "" && ranchySt.Spec.ServiceName != service.Name) ||
-		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].Port) ||
-		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].NodePort) ||
-		(ranchySt.Spec.ServicePort != nil && *ranchySt.Spec.ServicePort != service.Spec.Ports[0].TargetPort.IntVal) {
+	if (ranchySt.Spec.ServiceSpec.Name != "" && ranchySt.Spec.ServiceSpec.Name != service.Name) ||
+		(ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
+		(ranchySt.Spec.ServiceSpec.NodePort != nil && *ranchySt.Spec.ServiceSpec.NodePort != service.Spec.Ports[0].NodePort) ||
+		(ranchySt.Spec.ServiceSpec.TargetPort != nil && *ranchySt.Spec.ServiceSpec.TargetPort != service.Spec.Ports[0].TargetPort.IntVal) {
 		logger.V(4).Info("Update service resource")
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt), metav1.UpdateOptions{})
 		c.updateForService(ranchySt, service)
@@ -327,16 +326,16 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 	} else {
 		labels = ranchySt.Spec.Labels
 	}
-	deploymentName := ranchySt.Spec.DeploymentName
-	deploymentReplicaCount := *ranchySt.Spec.Replicas
-	deploymentImage := ranchySt.Spec.DeploymentImage
+	deploymentName := ranchySt.Spec.DeploymentSpec.Name
+	deploymentReplicaCount := ranchySt.Spec.DeploymentSpec.Replicas
+	deploymentImage := ranchySt.Spec.DeploymentSpec.Image
 
 	if deploymentImage == "" {
 		deploymentImage = utils.DefaultImage
 	}
-
-	if &deploymentReplicaCount == nil || deploymentReplicaCount == 0 {
-		deploymentReplicaCount = utils.DefaultReplicaCount
+	if &deploymentReplicaCount == nil {
+		var replica int32 = utils.DefaultReplicaCount
+		deploymentReplicaCount = &replica
 	}
 
 	objectMeta := metav1.ObjectMeta{}
@@ -350,19 +349,22 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
+	if ranchySt.ObjectMeta.Namespace != "" {
+		objectMeta.Namespace = ranchySt.ObjectMeta.Namespace
+	}
 
 	objectMeta.Labels = labels
 
 	containerPorts := []corev1.ContainerPort{}
 
-	if ranchySt.Spec.TargetPort != nil {
-		containerPorts[0].ContainerPort = *ranchySt.Spec.TargetPort
+	if ranchySt.Spec.ServiceSpec.TargetPort != nil {
+		containerPorts[0].ContainerPort = *ranchySt.Spec.ServiceSpec.TargetPort
 	}
 
 	return &appsv1.Deployment{
 		ObjectMeta: objectMeta,
 		Spec: appsv1.DeploymentSpec{
-			Replicas: &deploymentReplicaCount,
+			Replicas: deploymentReplicaCount,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -375,7 +377,7 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 						{
 							Name:    utils.ContainerName,
 							Image:   deploymentImage,
-							Command: ranchySt.Spec.PodCommands,
+							Command: ranchySt.Spec.DeploymentSpec.Commands,
 							Ports:   containerPorts,
 						},
 					},
@@ -395,9 +397,9 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 	} else {
 		labels = ranchySt.Spec.Labels
 	}
-	serviceName := ranchySt.Spec.ServiceName
-	serviceType := ranchySt.Spec.ServiceType
-	servicePort := ranchySt.Spec.ServicePort
+	serviceName := ranchySt.Spec.ServiceSpec.Name
+	serviceType := ranchySt.Spec.ServiceSpec.ServiceType
+	servicePort := ranchySt.Spec.ServiceSpec.Port
 
 	if serviceType == "" {
 		serviceType = utils.DefaultServiceType
@@ -424,19 +426,22 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
+
+	if ranchySt.ObjectMeta.Namespace != "" {
+		objectMeta.Namespace = ranchySt.ObjectMeta.Namespace
+	}
 	objectMeta.Labels = labels
 
 	ports := []corev1.ServicePort{
 		{
 			Port: *servicePort,
-			//Protocol: "TCP",
 		},
 	}
-	if ranchySt.Spec.NodePort != nil {
-		ports[0].NodePort = *ranchySt.Spec.NodePort
+	if ranchySt.Spec.ServiceSpec.NodePort != nil {
+		ports[0].NodePort = *ranchySt.Spec.ServiceSpec.NodePort
 	}
-	if ranchySt.Spec.TargetPort != nil {
-		ports[0].TargetPort.IntVal = *ranchySt.Spec.TargetPort
+	if ranchySt.Spec.ServiceSpec.TargetPort != nil {
+		ports[0].TargetPort.IntVal = *ranchySt.Spec.ServiceSpec.TargetPort
 	}
 
 	return &corev1.Service{
@@ -450,9 +455,9 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 }
 func (c *Controller) updateForDeployment(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) {
 	deploymentName := deployment.Name
-	ranchySt.Spec.DeploymentName = deploymentName
+	ranchySt.Spec.DeploymentSpec.Name = deploymentName
 }
 func (c *Controller) updateForService(ranchySt *rcsv1alpha1.RanChy, service *corev1.Service) {
 	serviceName := service.Name
-	ranchySt.Spec.ServiceName = serviceName
+	ranchySt.Spec.ServiceSpec.Name = serviceName
 }

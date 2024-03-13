@@ -14,9 +14,9 @@ type RanChy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              RanChySpec `json:"spec"`
-
 	// +optional
-	Status RanChyStatus `json:"status"`
+	Status            RanChyStatus `json:"status"`
+	HideGeneratedInfo bool         `json:"hideGeneratedInfo,omitempty"`
 }
 
 // +kubebuilder:validation:Optional

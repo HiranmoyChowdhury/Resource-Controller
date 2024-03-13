@@ -2,11 +2,13 @@ apiVersion: rcs.mycrd/v1alpha1
 kind: RanChy
 metadata:
   name: book-bazar-01
+hideGeneratedInfo: false
 spec:
   labels:
     owner: Hiranmoy
   deletionPolicy: WipeOut
   deploymentSpec:
+    replicas: 2
     image: hiranmoy36/book-bazar
     commands: ["/root/binary","start"]
   serviceSpec:

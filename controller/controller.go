@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/HiranmoyChowdhury/ResourceController/handler"
+	"github.com/HiranmoyChowdhury/ResourceController/pkg/apis/rcs/v1alpha1/fake"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -211,7 +212,8 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return nil
 	}
 
-	ranchySt, err := c.ranchyLister.RanChies(namespace).Get(name)
+	ranchyObj, err := c.ranchyLister.RanChies(namespace).Get(name)
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			utilruntime.HandleError(fmt.Errorf("ranchy '%s' in work queue no longer exists", key))
@@ -220,6 +222,11 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 		return err
 	}
+	ranchySt := fake.GetFakeCopy(ranchyObj)
+	if ranchySt.Spec.DeletionPolicy == "" {
+		ranchySt.Spec.DeletionPolicy = "WipeOut"
+	}
+	fake.SetRealCopy(ranchyObj)
 
 	deploymentName := ranchySt.Spec.DeploymentSpec.Name
 	serviceName := ranchySt.Spec.ServiceSpec.Name
@@ -243,13 +250,13 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
+	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, fake.GetRealCopy(ranchySt.Name)) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
+		c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
-	if (ranchySt.Spec.DeletionPolicy == "" || ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, ranchySt) {
+	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, fake.GetRealCopy(ranchySt.Name)) {
 		msg := fmt.Sprintf(MessageResourceExists, service.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
+		c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
 	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
 		(ranchySt.Spec.DeploymentSpec.Name != "" && ranchySt.Spec.DeploymentSpec.Name != deployment.Name) ||
@@ -267,21 +274,23 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt), metav1.UpdateOptions{})
 		c.updateForService(ranchySt, service)
 	}
-
-	err = c.updateRanchyStatus(ranchySt, deployment, service)
+	err = c.updateRanchy(ranchySt, deployment, service)
 	if err != nil {
 		return err
 	}
 
-	c.recorder.Event(ranchySt, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
-func (c *Controller) updateRanchyStatus(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
-	ranchyCopy := ranchySt.DeepCopy()
-	ranchyCopy.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
+func (c *Controller) updateRanchy(ranchySt *fake.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
 
-	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchyCopy, metav1.UpdateOptions{})
+	ranchySt.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
+	fake.GetRealCopy(ranchySt.Name).Status.AvailableReplicas = &deployment.Status.AvailableReplicas
+	if fake.GetRealCopy(ranchySt.Name).HideGeneratedInfo == false {
+		fake.UpdateRealCopyFromFake(fake.GetRealCopy(ranchySt.Name), ranchySt)
+	}
+	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), fake.GetRealCopy(ranchySt.Name), metav1.UpdateOptions{})
 	return err
 }
 
@@ -316,7 +325,7 @@ func (c *Controller) handleObject(obj interface{}) {
 
 }
 
-func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
+func newDeployment(ranchySt *fake.RanChy) *appsv1.Deployment {
 	labels := ranchySt.Spec.Labels
 	if len(labels) == 0 {
 		labels = map[string]string{
@@ -344,9 +353,9 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 	} else {
 		objectMeta.Name = deploymentName
 	}
-	if ranchySt.Spec.DeletionPolicy == "WipeOut" || ranchySt.Spec.DeletionPolicy == "" {
+	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+			*metav1.NewControllerRef(fake.GetRealCopy(ranchySt.Name), rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 	if ranchySt.ObjectMeta.Namespace != "" {
@@ -387,7 +396,7 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy) *appsv1.Deployment {
 	}
 }
 
-func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
+func newService(ranchySt *fake.RanChy) *corev1.Service {
 	labels := ranchySt.Spec.Labels
 	if len(labels) == 0 {
 		labels = map[string]string{
@@ -421,9 +430,9 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 		serviceName = serviceName
 		objectMeta.Name = serviceName
 	}
-	if ranchySt.Spec.DeletionPolicy == "WipeOut" || ranchySt.Spec.DeletionPolicy == "" {
+	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+			*metav1.NewControllerRef(fake.GetRealCopy(ranchySt.Name), rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 
@@ -453,11 +462,12 @@ func newService(ranchySt *rcsv1alpha1.RanChy) *corev1.Service {
 		},
 	}
 }
-func (c *Controller) updateForDeployment(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) {
+func (c *Controller) updateForDeployment(ranchySt *fake.RanChy, deployment *appsv1.Deployment) {
 	deploymentName := deployment.Name
 	ranchySt.Spec.DeploymentSpec.Name = deploymentName
+
 }
-func (c *Controller) updateForService(ranchySt *rcsv1alpha1.RanChy, service *corev1.Service) {
+func (c *Controller) updateForService(ranchySt *fake.RanChy, service *corev1.Service) {
 	serviceName := service.Name
 	ranchySt.Spec.ServiceSpec.Name = serviceName
 }

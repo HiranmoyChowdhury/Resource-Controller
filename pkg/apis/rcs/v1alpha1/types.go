@@ -15,8 +15,7 @@ type RanChy struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              RanChySpec `json:"spec"`
 	// +optional
-	Status            RanChyStatus `json:"status"`
-	HideGeneratedInfo bool         `json:"hideGeneratedInfo,omitempty"`
+	Status RanChyStatus `json:"status"`
 }
 
 // +kubebuilder:validation:Optional
@@ -40,8 +39,7 @@ type DeletionPolicy string
 
 type DeploymentSpec struct {
 	// +optional
-	Name string `json:"name,omitempty"`
-	// +optional
+	Name     string `json:"name,omitempty"`
 	Replicas *int32 `json:"replicas,omitempty"`
 	Image    string `json:"image"`
 	// +optional
@@ -52,8 +50,7 @@ type ServiceSpec struct {
 	Name string `json:"name,omitempty"`
 	// +optional
 	ServiceType corev1.ServiceType `json:"serviceType,omitempty"`
-	// +optional
-	Port *int32 `json:"port,omitempty"`
+	Port        *int32             `json:"port,omitempty"`
 	// +optional
 	TargetPort *int32 `json:"targetPort,omitempty"`
 	// +optional

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/HiranmoyChowdhury/ResourceController/handler"
-	"github.com/HiranmoyChowdhury/ResourceController/pkg/apis/rcs/v1alpha1/fake"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -212,7 +211,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return nil
 	}
 
-	ranchyObj, err := c.ranchyLister.RanChies(namespace).Get(name)
+	ranchySt, err := c.ranchyLister.RanChies(namespace).Get(name)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -222,19 +221,13 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 		return err
 	}
-	ranchySt := fake.GetFakeCopy(ranchyObj)
-	if ranchySt.Spec.DeletionPolicy == "" {
-		ranchySt.Spec.DeletionPolicy = "WipeOut"
-	}
-	fake.SetRealCopy(ranchyObj)
 
-	deploymentName := ranchySt.Spec.DeploymentSpec.Name
-	serviceName := ranchySt.Spec.ServiceSpec.Name
+	deploymentName := c.GetDeploymentName(ranchySt)
+	serviceName := c.GetServiceName(ranchySt)
 
 	deployment, err := c.deploymentLister.Deployments(ranchySt.Namespace).Get(deploymentName)
 	if errors.IsNotFound(err) {
-		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Create(context.TODO(), newDeployment(ranchySt), metav1.CreateOptions{})
-		c.updateForDeployment(ranchySt, deployment)
+		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Create(context.TODO(), newDeployment(ranchySt, deploymentName), metav1.CreateOptions{})
 	}
 	if err != nil {
 		return err
@@ -243,54 +236,50 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	service, err := c.serviceLister.Services(ranchySt.Namespace).Get(serviceName)
 
 	if errors.IsNotFound(err) {
-		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt), metav1.CreateOptions{})
-		c.updateForService(ranchySt, service)
+		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt, serviceName), metav1.CreateOptions{})
 	}
 	if err != nil {
 		return err
 	}
 
-	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, fake.GetRealCopy(ranchySt.Name)) {
+	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
-		c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeWarning, ErrResourceExists, msg)
+		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
-	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, fake.GetRealCopy(ranchySt.Name)) {
+	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, ranchySt) {
 		msg := fmt.Sprintf(MessageResourceExists, service.Name)
-		c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeWarning, ErrResourceExists, msg)
+		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
 	}
 	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
-		(ranchySt.Spec.DeploymentSpec.Name != "" && ranchySt.Spec.DeploymentSpec.Name != deployment.Name) ||
 		(ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) {
 		logger.V(4).Info("Update deployment resource")
-		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), newDeployment(ranchySt), metav1.UpdateOptions{})
-		c.updateForDeployment(ranchySt, deployment)
+		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), newDeployment(ranchySt, deploymentName), metav1.UpdateOptions{})
 	}
 
-	if (ranchySt.Spec.ServiceSpec.Name != "" && ranchySt.Spec.ServiceSpec.Name != service.Name) ||
-		(ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
+	if (ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
 		(ranchySt.Spec.ServiceSpec.NodePort != nil && *ranchySt.Spec.ServiceSpec.NodePort != service.Spec.Ports[0].NodePort) ||
 		(ranchySt.Spec.ServiceSpec.TargetPort != nil && *ranchySt.Spec.ServiceSpec.TargetPort != service.Spec.Ports[0].TargetPort.IntVal) {
 		logger.V(4).Info("Update service resource")
-		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt), metav1.UpdateOptions{})
-		c.updateForService(ranchySt, service)
+		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt, serviceName), metav1.UpdateOptions{})
 	}
 	err = c.updateRanchy(ranchySt, deployment, service)
 	if err != nil {
 		return err
 	}
 
-	c.recorder.Event(fake.GetRealCopy(ranchySt.Name), corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(ranchySt, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
-func (c *Controller) updateRanchy(ranchySt *fake.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
+func (c *Controller) updateRanchy(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
 
 	ranchySt.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
-	fake.GetRealCopy(ranchySt.Name).Status.AvailableReplicas = &deployment.Status.AvailableReplicas
-	if fake.GetRealCopy(ranchySt.Name).HideGeneratedInfo == false {
-		fake.UpdateRealCopyFromFake(fake.GetRealCopy(ranchySt.Name), ranchySt)
+
+	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), ranchySt, metav1.UpdateOptions{})
+	if err != nil {
+		return err
 	}
-	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), fake.GetRealCopy(ranchySt.Name), metav1.UpdateOptions{})
+	_, err = c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchySt, metav1.UpdateOptions{})
 	return err
 }
 
@@ -325,17 +314,21 @@ func (c *Controller) handleObject(obj interface{}) {
 
 }
 
-func newDeployment(ranchySt *fake.RanChy) *appsv1.Deployment {
-	labels := ranchySt.Spec.Labels
+func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment {
+
+	labels := make(map[string]string)
+	for k, v := range ranchySt.Spec.Labels {
+		labels[k] = v
+	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner": handler.NextLabel(),
+			"owner": NextLabel(),
+			"UID":   string(ranchySt.UID),
 		}
-		ranchySt.Spec.Labels = labels
 	} else {
-		labels = ranchySt.Spec.Labels
+		labels["UID"] = string(ranchySt.UID)
 	}
-	deploymentName := ranchySt.Spec.DeploymentSpec.Name
+	deploymentName := name
 	deploymentReplicaCount := ranchySt.Spec.DeploymentSpec.Replicas
 	deploymentImage := ranchySt.Spec.DeploymentSpec.Image
 
@@ -355,7 +348,7 @@ func newDeployment(ranchySt *fake.RanChy) *appsv1.Deployment {
 	}
 	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(fake.GetRealCopy(ranchySt.Name), rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 	if ranchySt.ObjectMeta.Namespace != "" {
@@ -396,17 +389,20 @@ func newDeployment(ranchySt *fake.RanChy) *appsv1.Deployment {
 	}
 }
 
-func newService(ranchySt *fake.RanChy) *corev1.Service {
-	labels := ranchySt.Spec.Labels
+func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
+	labels := make(map[string]string)
+	for k, v := range ranchySt.Spec.Labels {
+		labels[k] = v
+	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner": handler.NextLabel(),
+			"owner": NextLabel(),
+			"UID":   string(ranchySt.UID),
 		}
-		ranchySt.Spec.Labels = labels
 	} else {
-		labels = ranchySt.Spec.Labels
+		labels["UID"] = string(ranchySt.UID)
 	}
-	serviceName := ranchySt.Spec.ServiceSpec.Name
+	serviceName := name
 	serviceType := ranchySt.Spec.ServiceSpec.ServiceType
 	servicePort := ranchySt.Spec.ServiceSpec.Port
 
@@ -414,7 +410,7 @@ func newService(ranchySt *fake.RanChy) *corev1.Service {
 		serviceType = utils.DefaultServiceType
 	}
 	if servicePort == nil {
-		servicePort = handler.GetPort()
+		servicePort = GetPort()
 
 	}
 	if serviceType == "Headless" {
@@ -432,7 +428,7 @@ func newService(ranchySt *fake.RanChy) *corev1.Service {
 	}
 	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
 		objectMeta.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(fake.GetRealCopy(ranchySt.Name), rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 
@@ -462,12 +458,77 @@ func newService(ranchySt *fake.RanChy) *corev1.Service {
 		},
 	}
 }
-func (c *Controller) updateForDeployment(ranchySt *fake.RanChy, deployment *appsv1.Deployment) {
-	deploymentName := deployment.Name
-	ranchySt.Spec.DeploymentSpec.Name = deploymentName
+func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
+	UID := string(r.UID)
+	deploymentList, err := c.kubeclientset.AppsV1().Deployments(r.Namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: "UID",
+	})
+
+	if err == nil {
+		for _, deployment := range deploymentList.Items {
+			if deployment.Labels["UID"] == UID {
+				return deployment.Name
+			}
+		}
+	}
+	depName := r.Name
+	if r.Spec.DeploymentSpec.Name != "" {
+		depName += "-" + r.Spec.DeploymentSpec.Name
+	}
+
+	for i := 0; i != -1; i++ {
+		name, err := c.findDeploymentNameValidation(r, depName, int32(i))
+		if err == nil {
+			return name
+		}
+	}
+
+	return depName
+}
+
+func (c *Controller) findDeploymentNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
+	_name := name + "-" + String(cnt)
+	_, err := c.deploymentLister.Deployments(r.Namespace).Get(_name)
+	if err != nil {
+		return _name, nil
+	}
+	return "", fmt.Errorf("deployment Name already occupied")
 
 }
-func (c *Controller) updateForService(ranchySt *fake.RanChy, service *corev1.Service) {
-	serviceName := service.Name
-	ranchySt.Spec.ServiceSpec.Name = serviceName
+func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
+	UID := string(r.UID)
+	serviceList, err := c.kubeclientset.CoreV1().Services(r.Namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: "UID",
+	})
+
+	if err == nil {
+		for _, service := range serviceList.Items {
+			if service.Labels["UID"] == UID {
+				return service.Name
+			}
+		}
+	}
+	svcName := r.Name
+	if r.Spec.ServiceSpec.Name != "" {
+		svcName += "-" + r.Spec.ServiceSpec.Name
+	}
+
+	for i := 0; i != 90000000; i++ {
+		name, err := c.findServiceNameValidation(r, svcName, int32(i))
+		if err == nil {
+			return name
+		}
+	}
+
+	return svcName
+}
+
+func (c *Controller) findServiceNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
+	_name := name + "-" + String(cnt)
+	_, err := c.serviceLister.Services(r.Namespace).Get(_name)
+	if err != nil {
+		return _name, nil
+	}
+	return "", fmt.Errorf("service Name already occupied")
+
 }

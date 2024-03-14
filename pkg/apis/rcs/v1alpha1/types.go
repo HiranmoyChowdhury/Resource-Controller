@@ -8,15 +8,16 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:printcolumn:name="Deletion Policy",type=string,JSONPath=`.spec.deletionPolicy`
-// +kubebuilder:printcolumn:name="Deletion Policy",type=*int32,JSONPath=`.spec.deploymentSpec.replicas`
-// +kubebuilder:printcolumn:name="Deletion Policy",type=string,JSONPath=`.spec.deploymentSpec.image`
-// +kubebuilder:printcolumn:name="Deletion Policy",type=int32,JSONPath=`.spec.serviceSpec.port`
+// +kubebuilder:printcolumn:name="Availabe Replicas",type=integer,JSONPath=`.spec.status.availableReplicas`
+// +kubebuilder:printcolumn:name="Image Tag",type=string,JSONPath=`.spec.deploymentSpec.image`
+// +kubebuilder:printcolumn:name="Port",type=integer,JSONPath=`.spec.serviceSpec.port`
 // +kubebuilder:subresource:status
 
 type RanChy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              RanChySpec `json:"spec"`
+
+	Spec RanChySpec `json:"spec"`
 	// +optional
 	Status RanChyStatus `json:"status"`
 }

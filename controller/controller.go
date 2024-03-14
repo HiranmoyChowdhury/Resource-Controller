@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -47,7 +48,6 @@ type Controller struct {
 	ranchySynced     cache.InformerSynced
 
 	workqueue workqueue.RateLimitingInterface
-	getHelp   *helper
 	recorder  record.EventRecorder
 }
 
@@ -71,13 +71,6 @@ func NewController(
 		workqueue.NewItemExponentialFailureRateLimiter(5*time.Millisecond, 1000*time.Second),
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(50), 300)},
 	)
-	help := &helper{
-		counter:          0,
-		ownerName:        "RanChy36",
-		port:             30000,
-		deploymentPrefix: 0,
-		servicePrefix:    0,
-	}
 	controller := &Controller{
 		kubeclientset:    kubeclientset,
 		rcsclientset:     rcsclientset,
@@ -89,7 +82,6 @@ func NewController(
 		ranchySynced:     ranchyInformer.Informer().HasSynced,
 		workqueue:        workqueue.NewRateLimitingQueue(ratelimiter),
 		recorder:         recorder,
-		getHelp:          help,
 	}
 
 	logger.Info("Setting up event handlers")
@@ -241,27 +233,16 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
-		msg := fmt.Sprintf("Resource %q already exists and is not managed by RanChy", deployment.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, "ErrResourceExists", msg)
-	}
-	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, ranchySt) {
-		msg := fmt.Sprintf("Resource %q already exists and is not managed by RanChy", service.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, "ErrResourceExists", msg)
-	}
-	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
-		(ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) {
+	if deploymentSpecGotUpdate(ranchySt, deployment) == true {
 		logger.V(4).Info("Update deployment resource")
 		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), c.newDeployment(ranchySt, deploymentName), metav1.UpdateOptions{})
 	}
 
-	if (ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
-		(ranchySt.Spec.ServiceSpec.NodePort != nil && *ranchySt.Spec.ServiceSpec.NodePort != service.Spec.Ports[0].NodePort) ||
-		(ranchySt.Spec.ServiceSpec.TargetPort != nil && *ranchySt.Spec.ServiceSpec.TargetPort != service.Spec.Ports[0].TargetPort.IntVal) {
+	if serviceSpecGotUpdate(ranchySt, service) {
 		logger.V(4).Info("Update service resource")
 		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), c.newService(ranchySt, serviceName), metav1.UpdateOptions{})
 	}
-	err = c.updateRanchy(ranchySt, deployment, service)
+	err = c.updateRanchyStatus(ranchySt, deployment, service)
 	if err != nil {
 		return err
 	}
@@ -269,16 +250,11 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	c.recorder.Event(ranchySt, corev1.EventTypeNormal, "SuccessSynced", "RanChy synced successfully")
 	return nil
 }
-
-func (c *Controller) updateRanchy(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
+func (c *Controller) updateRanchyStatus(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment, service *corev1.Service) error {
 
 	ranchySt.Status.AvailableReplicas = &deployment.Status.AvailableReplicas
 
-	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).Update(context.TODO(), ranchySt, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-	_, err = c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchySt, metav1.UpdateOptions{})
+	_, err := c.rcsclientset.RcsV1alpha1().RanChies(ranchySt.Namespace).UpdateStatus(context.TODO(), ranchySt, metav1.UpdateOptions{})
 	return err
 }
 
@@ -321,73 +297,61 @@ func (c *Controller) newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *a
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner":   c.getHelp.NextLabel(),
 			"UID":     string(ranchySt.UID),
-			"Creator": "Hiranmoy Das Chowdhury",
+			"Creator": "HiranmoyDasChowdhury",
 		}
 	} else {
 		labels["UID"] = string(ranchySt.UID)
-		labels["Creator"] = "Hiranmoy Das Chowdhury"
+		labels["Creator"] = "HiranmoyDasChowdhury"
 	}
-	deploymentName := name
-	deploymentReplicaCount := ranchySt.Spec.DeploymentSpec.Replicas
-	deploymentImage := ranchySt.Spec.DeploymentSpec.Image
 
-	if deploymentImage == "" {
-		deploymentImage = utils.DefaultImage
-	}
-	if &deploymentReplicaCount == nil {
+	deployment := &appsv1.Deployment{}
+	deployment.Name = name
+
+	deployment.Spec.Replicas = ranchySt.Spec.DeploymentSpec.Replicas
+	if &deployment.Spec.Replicas == nil {
 		var replica int32 = utils.DefaultReplicaCount
-		deploymentReplicaCount = &replica
+		deployment.Spec.Replicas = &replica
 	}
 
-	objectMeta := metav1.ObjectMeta{}
-	if deploymentName == "" {
-		objectMeta.GenerateName = c.getHelp.ToLowerCase(ranchySt.Name)
-	} else {
-		objectMeta.Name = deploymentName
-	}
 	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
-		objectMeta.OwnerReferences = []metav1.OwnerReference{
+		deployment.OwnerReferences = []metav1.OwnerReference{
 			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
 		}
 	}
 	if ranchySt.ObjectMeta.Namespace != "" {
-		objectMeta.Namespace = ranchySt.ObjectMeta.Namespace
+		deployment.Namespace = ranchySt.ObjectMeta.Namespace
 	}
+	deployment.Labels = labels
 
-	objectMeta.Labels = labels
-
+	deploymentImage := ranchySt.Spec.DeploymentSpec.Image
+	if deploymentImage == "" {
+		deploymentImage = utils.DefaultImage
+	}
 	containerPorts := []corev1.ContainerPort{}
 
 	if ranchySt.Spec.ServiceSpec.TargetPort != nil {
 		containerPorts[0].ContainerPort = *ranchySt.Spec.ServiceSpec.TargetPort
 	}
-
-	return &appsv1.Deployment{
-		ObjectMeta: objectMeta,
-		Spec: appsv1.DeploymentSpec{
-			Replicas: deploymentReplicaCount,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:    utils.ContainerName,
-							Image:   deploymentImage,
-							Command: ranchySt.Spec.DeploymentSpec.Commands,
-							Ports:   containerPorts,
-						},
-					},
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: labels,
+	}
+	deployment.Spec.Template = corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    utils.ContainerName,
+					Image:   deploymentImage,
+					Command: ranchySt.Spec.DeploymentSpec.Commands,
+					Ports:   containerPorts,
 				},
 			},
 		},
 	}
+	return deployment
 }
 
 func (c *Controller) newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
@@ -397,54 +361,44 @@ func (c *Controller) newService(ranchySt *rcsv1alpha1.RanChy, name string) *core
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner":   c.getHelp.NextLabel(),
 			"UID":     string(ranchySt.UID),
-			"Creator": "Hiranmoy Das Chowdhury",
+			"Creator": "HiranmoyDasChowdhury",
 		}
 	} else {
 		labels["UID"] = string(ranchySt.UID)
-		labels["Creator"] = "Hiranmoy Das Chowdhury"
+		labels["Creator"] = "HiranmoyDasChowdhury"
 	}
-	serviceName := name
+	service := &corev1.Service{}
+
+	service.Name = name
 	serviceType := ranchySt.Spec.ServiceSpec.ServiceType
-	servicePort := ranchySt.Spec.ServiceSpec.Port
 
 	if serviceType == "" {
 		serviceType = utils.DefaultServiceType
 	}
-	if servicePort == nil {
-		servicePort = c.getHelp.GetPort()
-
-	}
 	if serviceType == "Headless" {
 		serviceType = ""
 	}
+	service.Spec.Type = corev1.ServiceType(serviceType)
 
-	perfectServiceType := corev1.ServiceType(serviceType)
-
-	objectMeta := metav1.ObjectMeta{}
-	if serviceName == "" {
-		objectMeta.GenerateName = c.getHelp.ToLowerCase(ranchySt.Name)
-	} else {
-		serviceName = serviceName
-		objectMeta.Name = serviceName
-	}
-	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
-		objectMeta.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
-		}
-	}
-
-	if ranchySt.ObjectMeta.Namespace != "" {
-		objectMeta.Namespace = ranchySt.ObjectMeta.Namespace
-	}
-	objectMeta.Labels = labels
-
+	servicePort := ranchySt.Spec.ServiceSpec.Port
 	ports := []corev1.ServicePort{
 		{
 			Port: *servicePort,
 		},
 	}
+
+	if ranchySt.Spec.DeletionPolicy == "WipeOut" {
+		service.OwnerReferences = []metav1.OwnerReference{
+			*metav1.NewControllerRef(ranchySt, rcsv1alpha1.SchemeGroupVersion.WithKind("RanChy")),
+		}
+	}
+
+	if ranchySt.ObjectMeta.Namespace != "" {
+		service.Namespace = ranchySt.ObjectMeta.Namespace
+	}
+	service.Labels = labels
+
 	if ranchySt.Spec.ServiceSpec.NodePort != nil {
 		ports[0].NodePort = *ranchySt.Spec.ServiceSpec.NodePort
 	}
@@ -452,14 +406,10 @@ func (c *Controller) newService(ranchySt *rcsv1alpha1.RanChy, name string) *core
 		ports[0].TargetPort.IntVal = *ranchySt.Spec.ServiceSpec.TargetPort
 	}
 
-	return &corev1.Service{
-		ObjectMeta: objectMeta,
-		Spec: corev1.ServiceSpec{
-			Ports:    ports,
-			Selector: labels,
-			Type:     perfectServiceType,
-		},
-	}
+	service.Spec.Ports = ports
+	service.Spec.Selector = labels
+
+	return service
 }
 func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 	UID := string(r.UID)
@@ -469,34 +419,35 @@ func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 
 	if err == nil {
 		for _, deployment := range deploymentList.Items {
-			if deployment.Labels["UID"] == UID && deployment.Labels["Creator"] == "Hiranmoy Das Chowdhury" {
+			if deployment.Labels["UID"] == UID && deployment.Labels["Creator"] == "HiranmoyDasChowdhury" {
 				return deployment.Name
 			}
 		}
 	}
-	depName := r.Name
+	var deploymentName bytes.Buffer
+	deploymentName.WriteString(r.Name)
 	if r.Spec.DeploymentSpec.Name != "" {
-		depName += "-" + r.Spec.DeploymentSpec.Name
+		deploymentName.WriteString("-")
+		deploymentName.WriteString(r.Spec.DeploymentSpec.Name)
 	}
 
-	for i := c.getHelp.deploymentPrefix; i != -1; i++ {
-		name, err := c.findDeploymentNameValidation(r, depName, i)
+	for i := 0; i != -1; i++ {
+		name, err := c.deploymentNameIsExist(r, deploymentName.String(), int32(i))
 		if err == nil {
-			c.getHelp.deploymentPrefix = i
 			return name
 		}
 	}
 
-	return depName
+	return deploymentName.String()
 }
 
-func (c *Controller) findDeploymentNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
-	_name := name + "-" + c.getHelp.String(cnt)
+func (c *Controller) deploymentNameIsExist(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
+	_name := fmt.Sprintf("%s%s%s", name, "-", String(cnt))
 	_, err := c.deploymentLister.Deployments(r.Namespace).Get(_name)
 	if err != nil {
 		return _name, nil
 	}
-	return "", fmt.Errorf("deployment Name already occupied")
+	return "", fmt.Errorf("deployment Name has already occupied")
 
 }
 func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
@@ -507,20 +458,20 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 
 	if err == nil {
 		for _, service := range serviceList.Items {
-			if service.Labels["UID"] == UID && service.Labels["Creator"] == "Hiranmoy Das Chowdhury" {
+			if service.Labels["UID"] == UID && service.Labels["Creator"] == "HiranmoyDasChowdhury" {
 				return service.Name
 			}
 		}
 	}
+
 	svcName := r.Name
 	if r.Spec.ServiceSpec.Name != "" {
-		svcName += "-" + r.Spec.ServiceSpec.Name
+		svcName = fmt.Sprintf("%s%s%s", svcName, "-", r.Spec.ServiceSpec.Name)
 	}
 
-	for i := c.getHelp.servicePrefix; i != -1; i++ {
-		name, err := c.findServiceNameValidation(r, svcName, i)
+	for i := 0; i != -1; i++ {
+		name, err := c.ServiceNameExist(r, svcName, int32(i))
 		if err == nil {
-			c.getHelp.servicePrefix = i
 			return name
 		}
 	}
@@ -528,12 +479,35 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 	return svcName
 }
 
-func (c *Controller) findServiceNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
-	_name := name + "-" + c.getHelp.String(cnt)
+func (c *Controller) ServiceNameExist(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
+	_name := fmt.Sprintf("%s%s%s", name, "-", String(cnt))
 	_, err := c.serviceLister.Services(r.Namespace).Get(_name)
 	if err != nil {
 		return _name, nil
 	}
 	return "", fmt.Errorf("service Name already occupied")
 
+}
+
+func deploymentSpecGotUpdate(ranchySt *rcsv1alpha1.RanChy, deployment *appsv1.Deployment) bool {
+	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) == true {
+		return true
+	}
+	if (ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) ||
+		(ranchySt.Spec.DeletionPolicy == "WipeOut" && len(deployment.OwnerReferences) == 0) ||
+		(ranchySt.Spec.DeletionPolicy == "Delete" && len(deployment.OwnerReferences) != 0) {
+		return true
+	}
+	return false
+
+}
+func serviceSpecGotUpdate(ranchySt *rcsv1alpha1.RanChy, service *corev1.Service) bool {
+	if (ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
+		(ranchySt.Spec.ServiceSpec.NodePort != nil && *ranchySt.Spec.ServiceSpec.NodePort != service.Spec.Ports[0].NodePort) ||
+		(ranchySt.Spec.ServiceSpec.TargetPort != nil && *ranchySt.Spec.ServiceSpec.TargetPort != service.Spec.Ports[0].TargetPort.IntVal) ||
+		(ranchySt.Spec.DeletionPolicy == "WipeOut" && len(service.OwnerReferences) == 0) ||
+		(ranchySt.Spec.DeletionPolicy == "Delete" && len(service.OwnerReferences) != 0) {
+		return true
+	}
+	return false
 }

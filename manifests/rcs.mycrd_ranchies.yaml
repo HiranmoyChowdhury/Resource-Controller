@@ -18,15 +18,15 @@ spec:
     - jsonPath: .spec.deletionPolicy
       name: Deletion Policy
       type: string
-    - jsonPath: .spec.deploymentSpec.replicas
-      name: Deletion Policy
-      type: '*int32'
+    - jsonPath: .spec.status.availableReplicas
+      name: Availabe Replicas
+      type: integer
     - jsonPath: .spec.deploymentSpec.image
-      name: Deletion Policy
+      name: Image Tag
       type: string
     - jsonPath: .spec.serviceSpec.port
-      name: Deletion Policy
-      type: int32
+      name: Port
+      type: integer
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -82,13 +82,13 @@ spec:
                   port:
                     format: int32
                     type: integer
-                  serviceType:
-                    description: Service Type string describes ingress methods for
-                      a service
-                    type: string
                   targetPort:
                     format: int32
                     type: integer
+                  type:
+                    description: Service Type string describes ingress methods for
+                      a service
+                    type: string
                 type: object
             type: object
           status:

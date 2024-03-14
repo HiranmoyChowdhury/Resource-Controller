@@ -1,14 +1,14 @@
 package controller
 
-var (
-	counter          int32  = 0
-	ownerName        string = "RanChy36"
-	port             int32  = 30000
-	deploymentPrefix int32  = 0
-	servicePrefix    int32  = 0
-)
+type helper struct {
+	counter          int32
+	ownerName        string
+	port             int32
+	deploymentPrefix int32
+	servicePrefix    int32
+}
 
-func String(n int32) string {
+func (h *helper) String(n int32) string {
 	buf := [11]byte{}
 	pos := len(buf)
 	i := int64(n)
@@ -29,24 +29,24 @@ func String(n int32) string {
 	}
 }
 
-func GetPort() *int32 {
-	ret := port
-	port++
+func (h *helper) GetPort() *int32 {
+	ret := h.port
+	h.port++
 	return &ret
 
 }
 
-func NextLabel() string {
-	counter++
-	return CurrentLabel()
+func (h *helper) NextLabel() string {
+	h.counter++
+	return h.CurrentLabel()
 }
-func CurrentLabel() string {
-	ret := ownerName
-	ret += String(counter)
+func (h *helper) CurrentLabel() string {
+	ret := h.ownerName
+	ret += h.String(h.counter)
 	return ret
 }
 
-func ToLowerCase(s string) string {
+func (h *helper) ToLowerCase(s string) string {
 	var result string = ""
 	for _, char := range s {
 		if char >= 'A' && char <= 'Z' {

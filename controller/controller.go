@@ -47,8 +47,8 @@ type Controller struct {
 	ranchySynced     cache.InformerSynced
 
 	workqueue workqueue.RateLimitingInterface
-
-	recorder record.EventRecorder
+	getHelp   *helper
+	recorder  record.EventRecorder
 }
 
 func NewController(
@@ -71,7 +71,13 @@ func NewController(
 		workqueue.NewItemExponentialFailureRateLimiter(5*time.Millisecond, 1000*time.Second),
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(50), 300)},
 	)
-
+	help := &helper{
+		counter:          0,
+		ownerName:        "RanChy36",
+		port:             30000,
+		deploymentPrefix: 0,
+		servicePrefix:    0,
+	}
 	controller := &Controller{
 		kubeclientset:    kubeclientset,
 		rcsclientset:     rcsclientset,
@@ -83,6 +89,7 @@ func NewController(
 		ranchySynced:     ranchyInformer.Informer().HasSynced,
 		workqueue:        workqueue.NewRateLimitingQueue(ratelimiter),
 		recorder:         recorder,
+		getHelp:          help,
 	}
 
 	logger.Info("Setting up event handlers")
@@ -219,7 +226,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 
 	deployment, err := c.deploymentLister.Deployments(ranchySt.Namespace).Get(deploymentName)
 	if errors.IsNotFound(err) {
-		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Create(context.TODO(), newDeployment(ranchySt, deploymentName), metav1.CreateOptions{})
+		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Create(context.TODO(), c.newDeployment(ranchySt, deploymentName), metav1.CreateOptions{})
 	}
 	if err != nil {
 		return err
@@ -228,7 +235,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	service, err := c.serviceLister.Services(ranchySt.Namespace).Get(serviceName)
 
 	if errors.IsNotFound(err) {
-		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), newService(ranchySt, serviceName), metav1.CreateOptions{})
+		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Create(context.TODO(), c.newService(ranchySt, serviceName), metav1.CreateOptions{})
 	}
 	if err != nil {
 		return err
@@ -245,14 +252,14 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
 		(ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) {
 		logger.V(4).Info("Update deployment resource")
-		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), newDeployment(ranchySt, deploymentName), metav1.UpdateOptions{})
+		deployment, err = c.kubeclientset.AppsV1().Deployments(ranchySt.Namespace).Update(context.TODO(), c.newDeployment(ranchySt, deploymentName), metav1.UpdateOptions{})
 	}
 
 	if (ranchySt.Spec.ServiceSpec.Port != nil && *ranchySt.Spec.ServiceSpec.Port != service.Spec.Ports[0].Port) ||
 		(ranchySt.Spec.ServiceSpec.NodePort != nil && *ranchySt.Spec.ServiceSpec.NodePort != service.Spec.Ports[0].NodePort) ||
 		(ranchySt.Spec.ServiceSpec.TargetPort != nil && *ranchySt.Spec.ServiceSpec.TargetPort != service.Spec.Ports[0].TargetPort.IntVal) {
 		logger.V(4).Info("Update service resource")
-		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), newService(ranchySt, serviceName), metav1.UpdateOptions{})
+		service, err = c.kubeclientset.CoreV1().Services(ranchySt.Namespace).Update(context.TODO(), c.newService(ranchySt, serviceName), metav1.UpdateOptions{})
 	}
 	err = c.updateRanchy(ranchySt, deployment, service)
 	if err != nil {
@@ -306,7 +313,7 @@ func (c *Controller) handleObject(obj interface{}) {
 
 }
 
-func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment {
+func (c *Controller) newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment {
 
 	labels := make(map[string]string)
 	for k, v := range ranchySt.Spec.Labels {
@@ -314,7 +321,7 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner":   NextLabel(),
+			"owner":   c.getHelp.NextLabel(),
 			"UID":     string(ranchySt.UID),
 			"Creator": "Hiranmoy Das Chowdhury",
 		}
@@ -336,7 +343,7 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment
 
 	objectMeta := metav1.ObjectMeta{}
 	if deploymentName == "" {
-		objectMeta.GenerateName = ToLowerCase(ranchySt.Name)
+		objectMeta.GenerateName = c.getHelp.ToLowerCase(ranchySt.Name)
 	} else {
 		objectMeta.Name = deploymentName
 	}
@@ -383,14 +390,14 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment
 	}
 }
 
-func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
+func (c *Controller) newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
 	labels := make(map[string]string)
 	for k, v := range ranchySt.Spec.Labels {
 		labels[k] = v
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner":   NextLabel(),
+			"owner":   c.getHelp.NextLabel(),
 			"UID":     string(ranchySt.UID),
 			"Creator": "Hiranmoy Das Chowdhury",
 		}
@@ -406,7 +413,7 @@ func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
 		serviceType = utils.DefaultServiceType
 	}
 	if servicePort == nil {
-		servicePort = GetPort()
+		servicePort = c.getHelp.GetPort()
 
 	}
 	if serviceType == "Headless" {
@@ -417,7 +424,7 @@ func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
 
 	objectMeta := metav1.ObjectMeta{}
 	if serviceName == "" {
-		objectMeta.GenerateName = ToLowerCase(ranchySt.Name)
+		objectMeta.GenerateName = c.getHelp.ToLowerCase(ranchySt.Name)
 	} else {
 		serviceName = serviceName
 		objectMeta.Name = serviceName
@@ -472,9 +479,10 @@ func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 		depName += "-" + r.Spec.DeploymentSpec.Name
 	}
 
-	for i := deploymentPrefix; i != -1; i++ {
+	for i := c.getHelp.deploymentPrefix; i != -1; i++ {
 		name, err := c.findDeploymentNameValidation(r, depName, i)
 		if err == nil {
+			c.getHelp.deploymentPrefix = i
 			return name
 		}
 	}
@@ -483,7 +491,7 @@ func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 }
 
 func (c *Controller) findDeploymentNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
-	_name := name + "-" + String(cnt)
+	_name := name + "-" + c.getHelp.String(cnt)
 	_, err := c.deploymentLister.Deployments(r.Namespace).Get(_name)
 	if err != nil {
 		return _name, nil
@@ -509,9 +517,10 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 		svcName += "-" + r.Spec.ServiceSpec.Name
 	}
 
-	for i := servicePrefix; i != -1; i++ {
+	for i := c.getHelp.servicePrefix; i != -1; i++ {
 		name, err := c.findServiceNameValidation(r, svcName, i)
 		if err == nil {
+			c.getHelp.servicePrefix = i
 			return name
 		}
 	}
@@ -520,7 +529,7 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 }
 
 func (c *Controller) findServiceNameValidation(r *rcsv1alpha1.RanChy, name string, cnt int32) (string, error) {
-	_name := name + "-" + String(cnt)
+	_name := name + "-" + c.getHelp.String(cnt)
 	_, err := c.serviceLister.Services(r.Namespace).Get(_name)
 	if err != nil {
 		return _name, nil

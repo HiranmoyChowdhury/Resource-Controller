@@ -18,6 +18,15 @@ spec:
     - jsonPath: .spec.deletionPolicy
       name: Deletion Policy
       type: string
+    - jsonPath: .spec.deploymentSpec.replicas
+      name: Deletion Policy
+      type: '*int32'
+    - jsonPath: .spec.deploymentSpec.image
+      name: Deletion Policy
+      type: string
+    - jsonPath: .spec.serviceSpec.port
+      name: Deletion Policy
+      type: int32
     name: v1alpha1
     schema:
       openAPIV3Schema:

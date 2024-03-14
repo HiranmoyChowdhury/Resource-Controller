@@ -5,7 +5,7 @@ metadata:
 spec:
   deletionPolicy: WipeOut
   deploymentSpec:
-    replicas: 2
+    replicas: 5
     image: hiranmoy36/book-bazar
     commands: ["/root/binary","start"]
   serviceSpec:

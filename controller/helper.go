@@ -1,11 +1,11 @@
 package controller
 
-import "fmt"
-
 var (
-	counter   int32  = 2
-	ownerName string = "RanChy36"
-	port      int32  = 30000
+	counter          int32  = 0
+	ownerName        string = "RanChy36"
+	port             int32  = 30000
+	deploymentPrefix int32  = 0
+	servicePrefix    int32  = 0
 )
 
 func String(n int32) string {
@@ -42,9 +42,7 @@ func NextLabel() string {
 }
 func CurrentLabel() string {
 	ret := ownerName
-	fmt.Println(ret)
-	ret += "skdjk"
-	fmt.Println(ret)
+	ret += String(counter)
 	return ret
 }
 

@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/HiranmoyChowdhury/ResourceController/handler"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -322,11 +321,13 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner": NextLabel(),
-			"UID":   string(ranchySt.UID),
+			"owner":   NextLabel(),
+			"UID":     string(ranchySt.UID),
+			"Creator": "Hiranmoy Das Chowdhury",
 		}
 	} else {
 		labels["UID"] = string(ranchySt.UID)
+		labels["Creator"] = "Hiranmoy Das Chowdhury"
 	}
 	deploymentName := name
 	deploymentReplicaCount := ranchySt.Spec.DeploymentSpec.Replicas
@@ -342,7 +343,7 @@ func newDeployment(ranchySt *rcsv1alpha1.RanChy, name string) *appsv1.Deployment
 
 	objectMeta := metav1.ObjectMeta{}
 	if deploymentName == "" {
-		objectMeta.GenerateName = handler.ToLowerCase(ranchySt.Name)
+		objectMeta.GenerateName = ToLowerCase(ranchySt.Name)
 	} else {
 		objectMeta.Name = deploymentName
 	}
@@ -396,11 +397,13 @@ func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
 	}
 	if len(labels) == 0 {
 		labels = map[string]string{
-			"owner": NextLabel(),
-			"UID":   string(ranchySt.UID),
+			"owner":   NextLabel(),
+			"UID":     string(ranchySt.UID),
+			"Creator": "Hiranmoy Das Chowdhury",
 		}
 	} else {
 		labels["UID"] = string(ranchySt.UID)
+		labels["Creator"] = "Hiranmoy Das Chowdhury"
 	}
 	serviceName := name
 	serviceType := ranchySt.Spec.ServiceSpec.ServiceType
@@ -421,7 +424,7 @@ func newService(ranchySt *rcsv1alpha1.RanChy, name string) *corev1.Service {
 
 	objectMeta := metav1.ObjectMeta{}
 	if serviceName == "" {
-		objectMeta.GenerateName = handler.ToLowerCase(ranchySt.Name)
+		objectMeta.GenerateName = ToLowerCase(ranchySt.Name)
 	} else {
 		serviceName = serviceName
 		objectMeta.Name = serviceName
@@ -466,7 +469,7 @@ func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 
 	if err == nil {
 		for _, deployment := range deploymentList.Items {
-			if deployment.Labels["UID"] == UID {
+			if deployment.Labels["UID"] == UID && deployment.Labels["Creator"] == "Hiranmoy Das Chowdhury" {
 				return deployment.Name
 			}
 		}
@@ -476,8 +479,8 @@ func (c *Controller) GetDeploymentName(r *rcsv1alpha1.RanChy) string {
 		depName += "-" + r.Spec.DeploymentSpec.Name
 	}
 
-	for i := 0; i != -1; i++ {
-		name, err := c.findDeploymentNameValidation(r, depName, int32(i))
+	for i := deploymentPrefix; i != -1; i++ {
+		name, err := c.findDeploymentNameValidation(r, depName, i)
 		if err == nil {
 			return name
 		}
@@ -503,7 +506,7 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 
 	if err == nil {
 		for _, service := range serviceList.Items {
-			if service.Labels["UID"] == UID {
+			if service.Labels["UID"] == UID && service.Labels["Creator"] == "Hiranmoy Das Chowdhury" {
 				return service.Name
 			}
 		}
@@ -513,8 +516,8 @@ func (c *Controller) GetServiceName(r *rcsv1alpha1.RanChy) string {
 		svcName += "-" + r.Spec.ServiceSpec.Name
 	}
 
-	for i := 0; i != 90000000; i++ {
-		name, err := c.findServiceNameValidation(r, svcName, int32(i))
+	for i := servicePrefix; i != -1; i++ {
+		name, err := c.findServiceNameValidation(r, svcName, i)
 		if err == nil {
 			return name
 		}

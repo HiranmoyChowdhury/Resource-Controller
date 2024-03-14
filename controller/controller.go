@@ -35,13 +35,6 @@ import (
 
 const controllerAgentName = "RanChy-controller"
 
-const (
-	SuccessSynced         = "Synced"
-	ErrResourceExists     = "ErrResourceExists"
-	MessageResourceExists = "Resource %q already exists and is not managed by RanChy"
-	MessageResourceSynced = "RanChy synced successfully"
-)
-
 type Controller struct {
 	kubeclientset kubernetes.Interface
 	rcsclientset  clientset.Interface
@@ -242,12 +235,12 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 
 	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(deployment, ranchySt) {
-		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
+		msg := fmt.Sprintf("Resource %q already exists and is not managed by RanChy", deployment.Name)
+		c.recorder.Event(ranchySt, corev1.EventTypeWarning, "ErrResourceExists", msg)
 	}
 	if (ranchySt.Spec.DeletionPolicy == "WipeOut") && !metav1.IsControlledBy(service, ranchySt) {
-		msg := fmt.Sprintf(MessageResourceExists, service.Name)
-		c.recorder.Event(ranchySt, corev1.EventTypeWarning, ErrResourceExists, msg)
+		msg := fmt.Sprintf("Resource %q already exists and is not managed by RanChy", service.Name)
+		c.recorder.Event(ranchySt, corev1.EventTypeWarning, "ErrResourceExists", msg)
 	}
 	if (ranchySt.Spec.DeploymentSpec.Replicas != nil && *ranchySt.Spec.DeploymentSpec.Replicas != *deployment.Spec.Replicas) ||
 		(ranchySt.Spec.DeploymentSpec.Image != "" && ranchySt.Spec.DeploymentSpec.Image != deployment.Spec.Template.Spec.Containers[0].Image) {
@@ -266,7 +259,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 		return err
 	}
 
-	c.recorder.Event(ranchySt, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(ranchySt, corev1.EventTypeNormal, "SuccessSynced", "RanChy synced successfully")
 	return nil
 }
 

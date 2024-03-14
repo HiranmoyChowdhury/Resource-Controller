@@ -20,7 +20,6 @@ import (
 )
 
 func Start() {
-	klog.InitFlags(nil)
 
 	ctx := signals.SetupSignalHandler()
 	logger := klog.FromContext(ctx)
@@ -68,7 +67,7 @@ func Start() {
 	rcsInformerFactory.Start(ctx.Done())
 
 	/// Now it's time to run this contoller
-	if err = controller.Run(ctx, 2); err != nil {
+	if err = controller.Run(ctx, 16); err != nil {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}

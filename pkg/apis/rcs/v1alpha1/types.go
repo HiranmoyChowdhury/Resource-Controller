@@ -52,7 +52,7 @@ type ServiceSpec struct {
 	// +optional
 	Name string `json:"name,omitempty"`
 	// +optional
-	ServiceType corev1.ServiceType `json:"serviceType,omitempty"`
+	ServiceType corev1.ServiceType `json:"type,omitempty"`
 	Port        *int32             `json:"port,omitempty"`
 	// +optional
 	TargetPort *int32 `json:"targetPort,omitempty"`

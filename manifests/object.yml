@@ -6,6 +6,20 @@ spec:
   deletionPolicy: WipeOut
   deploymentSpec:
     replicas: 5
+    name: skdgfj
+    image: hiranmoy36/book-bazar
+    commands: ["/root/binary","start"]
+  serviceSpec:
+    port: 8080
+---
+apiVersion: rcs.mycrd/v1alpha1
+kind: RanChy
+metadata:
+  name: book-bazar-02
+spec:
+  deletionPolicy: WipeOut
+  deploymentSpec:
+    replicas: 5
     image: hiranmoy36/book-bazar
     commands: ["/root/binary","start"]
   serviceSpec:
